@@ -851,7 +851,7 @@ public:
     }
     virtual void draw(sf::RenderTarget& target, sf::RenderStates states = sf::RenderStates::Default) const {
         target.draw(rect, states);
-        target.draw(cursor, states);
+        if (inputted) target.draw(cursor, states);
         target.draw(text, states);
     }
     void InputText(sf::Event&event) {

@@ -30,11 +30,6 @@
 #define isInsideField(v) (fieldSprite.getGlobalBounds().contains(v))
 
 /**
- * @brief Флаг загрузки поля из файла.
- */
-bool loaded = false;
-
-/**
  * @brief Главный класс приложения: окно, поле, интерфейс и алгоритмы поиска.
  */
 class App {
@@ -58,6 +53,10 @@ public:
     void generateField(float (*f)(sf::Vector2f));
     /// @brief Загрузка поля из изображения (градиент в градациях серого).
     void loadField(std::string);
+    /// @brief Загрузка конфигурации из файла.
+    void loadConfig(std::string);
+    /// @brief Сохранение конфигурации в файл.
+    void safeConfig(std::string);
     /// @brief Перевод экранных координат в координаты клеток.
     sf::Vector2i pos2cell(sf::Vector2f pos);
     /// @brief Оптимальный маршрут: полный перебор по сетке с ограничениями
@@ -113,7 +112,7 @@ public:
     bool isDifferenceSliderActive = false, isAngleSliderActive = false;
 
     // ----- Кнопки -----
-    Button* generateButton, *printButton, *addTurnsButton, *removeTurnsButton, *findOptimal1, *findOptimalButton, *findOptimal0, *experimentalButton, *loadButton;
+    Button* generateButton, *printButton, *addTurnsButton, *removeTurnsButton, *findOptimal1, *findOptimalButton, *findOptimal0, *experimentalButton, *loadButton, *loadConfigButton, *saveConfigButton;
     std::vector<MyCircle*> circles;
     MyCircle* activeCircle = nullptr;
 
@@ -126,7 +125,7 @@ public:
     // ----- Линия и текстовое поле -----
     sf::VertexArray *wayLines;
 
-    TextBox *fileNameTextBox;
+    TextBox *fileNameTextBox, *configNameTextBox;
 
     // ----- Потоки вычислений -----
     sf::Thread *threadApproxRect, *thread, *threadDP, *threadExperiment;
@@ -145,12 +144,12 @@ App::~App() {
     delete globalClock;
     delete information; delete rangeInfo; delete sliderValue; delete wayInfo; delete resultText; delete workInfo;
     delete differenceSlider; delete angleSlider;
-    delete generateButton; delete printButton; delete addTurnsButton, delete removeTurnsButton; delete findOptimal1; delete findOptimalButton; delete findOptimal0; delete experimentalButton; delete loadButton;
+    delete generateButton; delete printButton; delete addTurnsButton, delete removeTurnsButton; delete findOptimal1; delete findOptimalButton; delete findOptimal0; delete experimentalButton; delete loadButton; delete loadConfigButton; delete saveConfigButton;
     for (int i = 0; i < circles.size(); i++) delete circles[i];
     delete changeFieldSwitch;
     delete multiSlider;
     delete wayLines;
-    delete fileNameTextBox;
+    delete fileNameTextBox; delete configNameTextBox;
     thread->terminate();
     threadApproxRect->terminate();
     threadDP->terminate();
@@ -210,6 +209,8 @@ void App::init(float angle) {
     // button
     generateButton = new Button(sf::Vector2f(15, fieldSize.y + 70), "Generate grid");
     loadButton = new Button(sf::Vector2f(230, fieldSize.y + 70), "Load grid");
+    loadConfigButton = new Button(sf::Vector2f(450, fieldSize.y + 70), "Load config");
+    saveConfigButton = new Button(sf::Vector2f(450, fieldSize.y + 10), "Save config");
     addTurnsButton = new Button(sf::Vector2f(15, fieldSize.y + 15), "Add turns");
     removeTurnsButton = new Button(sf::Vector2f(178,fieldSize.y + 15), "Remove turns");
     findOptimal0 = new Button(sf::Vector2f(15, fieldSize.y + 170), "DP Method");
@@ -233,7 +234,8 @@ void App::init(float angle) {
     (*wayLines)[0].color = (*wayLines)[1].color = sf::Color::Magenta;
 
     // TextBox
-    fileNameTextBox = new TextBox(sf::Vector2f(230, fieldSize.y + 125), sf::Vector2f(200, 30));
+    fileNameTextBox   = new TextBox(sf::Vector2f(230, fieldSize.y + 125), sf::Vector2f(200, 30));
+    configNameTextBox = new TextBox(sf::Vector2f(450, fieldSize.y + 125), sf::Vector2f(200, 30));
 
     threadDP = new sf::Thread(calculateOptimalSolutionDP, this);
     // threadApproxRect = new sf::Thread(calculateOptimalSolutionByApproxWithRect, this);
@@ -281,6 +283,8 @@ void App::draw() {
     // button
     window->draw(*generateButton);
     window->draw(*loadButton);
+    window->draw(*loadConfigButton);
+    window->draw(*saveConfigButton);
     window->draw(*printButton);
     window->draw(*addTurnsButton);
     window->draw(*removeTurnsButton);
@@ -291,6 +295,7 @@ void App::draw() {
     window->draw(*findOptimal0);
     // TextBox
     window->draw(*fileNameTextBox);
+    window->draw(*configNameTextBox);
     // line
     for (int i = 0; i < circles.size() - 1; i++) {
         if (isInsideField(circles[i]->getPosition()) && isInsideField(circles[i + 1]->getPosition())) {
@@ -453,7 +458,11 @@ void App::eventHandler() {
         } else if (generateButton->isPressed(event)) {
             generateField(myFunction);
         } else if (loadButton->isPressed(event)) {
-            loadField(fileNameTextBox->string); loaded = true; break;
+            loadField(fileNameTextBox->string); break;
+        } else if (loadConfigButton->isPressed(event)) {
+            loadConfig(configNameTextBox->string); break;
+        } else if (saveConfigButton->isPressed(event)) {
+            safeConfig(configNameTextBox->string); break;
         } else if (printButton->isPressed(event)) {
             // Печать текущего маршрута и его стоимости в консоль
             if (acceptable && !changeFieldSwitch->isOn) {
@@ -486,6 +495,7 @@ void App::eventHandler() {
         //     threadExperiment->launch();
         } else {
             fileNameTextBox->InputText(event);
+            configNameTextBox->InputText(event);
             if (event.type == sf::Event::MouseButtonPressed) {
                 if (event.mouseButton.button == sf::Mouse::Left) {
                     // Выбор/перетаскивание маркеров маршрута
@@ -622,6 +632,51 @@ inline void App::loadField(std::string filename) {
     circles[0]->setPosition(fieldSize);
     circles[1]->setPosition(fieldSize + sf::Vector2f(0.f, 30.f));
     // std::cout << "bruh\n";
+}
+
+inline void App::loadConfig(std::string filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) return;
+    file >> gridSize.x >> gridSize.y >> cellSize >> fieldSize.x >> fieldSize.y;
+    for (int i = 0; i < gridSize.y; i++) {
+        for (int j = 0; j < gridSize.x; j++) {
+            file >> grid.at(j).at(i);
+        }
+    }
+    while (circles.size() > 2) {
+        circles.erase(circles.end() - 2);
+        gradientsOfWays.pop_back();
+        gradientOfTurns.pop_back();
+    }
+    sf::Vector2f pos;
+    file >> pos.x >> pos.y; circles.front()->setPosition(pos);
+    file >> pos.x >> pos.y; circles.back()->setPosition(pos);
+    size_t n; file >> n;
+    for (int i = 0; i < n; i++) {
+        file >> pos.x >> pos.y;
+        circles.insert(circles.end() - 1, new MyCircle(pos, sf::Color(0, 160, 0), "Turn" + std::to_string(circles.size() - 1)));
+        gradientsOfWays.push_back(sf::Vector2f{0.f, 0.f});
+        gradientOfTurns.push_back(sf::Vector2f{0.f, 0.f});
+    }
+    file >> maxDifference >> phi_0;
+}
+
+inline void App::safeConfig(std::string filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) return;
+    file << gridSize.x << ' ' << gridSize.y << ' ' << cellSize << ' ' << fieldSize.x << ' ' << fieldSize.y << ' ';
+    for (int i = 0; i < gridSize.y; i++) {
+        for (int j = 0; j < gridSize.x; j++) {
+            file << grid.at(j).at(i) << ' ';
+        }
+    }
+    file << circles.front()->getPosition().x << ' ' << circles.front()->getPosition().y << ' ' << circles.back()->getPosition().x << ' ' << circles.back()->getPosition().y << ' ';
+    file << circles.size() - 2 << ' ';
+    for (int i = 1; i < circles.size() - 1; i++) {
+        file << circles[i]->getPosition().x << ' ' << circles[i]->getPosition().y << ' ';
+    }
+    file << maxDifference << ' ' << phi_0 << ' ';
+
 }
 
 // Перевод экранной позиции в координаты клетки (ось Y инвертируется)
