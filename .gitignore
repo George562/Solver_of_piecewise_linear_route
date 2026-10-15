@@ -1,0 +1,25 @@
+# Сборка
+build/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.dll
+*.dSYM/
+*.log
+
+# Ресурсы (шрифты, изображения) — положить локально
+*.ttf
+*.otf
+*.png
+*.jpg
+
+# IDE / редакторы
+.vscode/
+.idea/
+*.user
+*.suo
+CMakeCache.txt
+CMakeFiles/
